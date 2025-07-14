@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Book Turf - TurfEase</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+</head>
+<body class="bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <h1 class="text-2xl font-bold text-indigo-600">TurfEase</h1>
+                    </div>
+                    <div class="hidden md:ml-6 md:flex md:space-x-8">
+                        <a href="{{ url_for('dashboard') }}" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-home mr-2"></i>Dashboard
+                        </a>
+                        <a href="{{ url_for('book_turf') }}" class="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-calendar-plus mr-2"></i>Book Turf
+                        </a>
+                        <a href="{{ url_for('profile') }}" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-user mr-2"></i>Profile
+                        </a>
+                        <a href="{{ url_for('chat') }}" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
+                            <i class="fas fa-comments mr-2"></i>Chat
+                        </a>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <span class="text-gray-700 text-sm">{{ current_user.name }}</span>
+                        <a href="{{ url_for('logout') }}" class="ml-4 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md text-sm font-medium">
+                            <i class="fas fa-sign-out-alt mr-1"></i>Logout
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} mb-4 p-4 rounded-md {% if category == 'error' %}bg-red-100 border border-red-400 text-red-700{% elif category == 'success' %}bg-green-100 border border-green-400 text-green-700{% elif category == 'info' %}bg-blue-100 border border-blue-400 text-blue-700{% else %}bg-yellow-100 border border-yellow-400 text-yellow-700{% endif %}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto py-6 sm:px-6 lg:px-8">
+        <div class="bg-white rounded-lg shadow-lg">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h1 class="text-2xl font-bold text-gray-900">Book a Turf</h1>
+                <p class="text-gray-600 mt-1">Select your preferred date, time, and turf type</p>
+            </div>
+            
+            <form method="POST" class="p-6 space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Turf Side -->
+                    <div>
+                        <label for="turf_side" class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-futbol mr-2"></i>Turf Type
+                        </label>
+                        <select id="turf_side" name="turf_side" required onchange="checkAvailability()"
+                                class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                            <option value="">Select Turf Type</option>
+                            {% for turf in turf_sides %}
+                            <option value="{{ turf }}">{{ turf }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- Booking Date -->
+                    <div>
+                        <label for="booking_date" class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-calendar mr-2"></i>Booking Date
+                        </label>
+                        <input type="date" id="booking_date" name="booking_date" required onchange="checkAvailability()"
+                               min="{{ datetime.now().strftime('%Y-%m-%d') }}"
+                               max="{{ (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d') }}"
+                               class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" />
+                    </div>
+                </div>
+
+                <!-- Time Slot -->
+                <div>
+                    <label for="time_slot" class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-clock mr-2"></i>Time Slot
+                    </label>
+                    <select id="time_slot" name="time_slot" required
+                            class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                        <option value="">Select Time Slot</option>
+                        {% for slot in time_slots %}
+                        <option value="{{ slot }}">{{ slot }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Submit Button -->
+                <div>
+                    <button type="submit" class="w-full inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Book Now
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <script>
+        async function checkAvailability() {
+            const turfSide = document.getElementById('turf_side').value;
+            const bookingDate = document.getElementById('booking_date').value;
+            const timeSlotSelect = document.getElementById('time_slot');
+            
+            if (!turfSide || !bookingDate) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/check_availability?turf_side=${encodeURIComponent(turfSide)}&booking_date=${encodeURIComponent(bookingDate)}`);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const availableSlots = await response.json();
+                
+                // Clear previous options except placeholder
+                timeSlotSelect.innerHTML = '<option value="">Select Time Slot</option>';
+                
+                availableSlots.forEach(slot => {
+                    const option = document.createElement('option');
+                    option.value = slot;
+                    option.textContent = slot;
+                    timeSlotSelect.appendChild(option);
+                });
+                
+                if (availableSlots.length === 0) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = 'No slots available';
+                    option.disabled = true;
+                    timeSlotSelect.appendChild(option);
+                }
+            } catch (error) {
+                console.error('Error fetching availability:', error);
+            }
+        }
+    </script>
+</body>
+</html>
