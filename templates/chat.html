@@ -1,174 +1,300 @@
-<!DOCTYPE html>
-<html lang="en" >
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Chat - TurfEase</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
-  />
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"
-    integrity="sha384-f2vIT2mKN0Tx8wzhuJeBDtvfVnxEqozvlUuF+Rc+85T+EEYmYTsO7+0qTAFlhdbQ"
-    crossorigin="anonymous"></script>
-</head>
-<body class="bg-gray-50 flex flex-col min-h-screen">
+{% extends "base.html" %}
 
-  <!-- Navigation -->
-  <nav class="bg-white shadow-lg sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex justify-between h-16">
-        <div class="flex items-center">
-          <div class="flex-shrink-0">
-            <h1 class="text-2xl font-bold text-indigo-600">TurfEase</h1>
-          </div>
-          <div class="hidden md:ml-6 md:flex md:space-x-8">
-            <a href="{{ url_for('dashboard') }}" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-              <i class="fas fa-home mr-2"></i>Dashboard
-            </a>
-            <a href="{{ url_for('book_turf') }}" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-              <i class="fas fa-calendar-plus mr-2"></i>Book Turf
-            </a>
-            <a href="{{ url_for('profile') }}" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-              <i class="fas fa-user mr-2"></i>Profile
-            </a>
-            <a href="{{ url_for('chat') }}" class="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-              <i class="fas fa-comments mr-2"></i>Chat
-            </a>
-          </div>
-        </div>
-        <div class="flex items-center">
-          <div class="flex-shrink-0">
-            <span class="text-gray-700 text-sm">{{ current_user.name }}</span>
-            <a href="{{ url_for('logout') }}" class="ml-4 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md text-sm font-medium">
-              <i class="fas fa-sign-out-alt mr-1"></i>Logout
-            </a>
-          </div>
-        </div>
-      </div>
-    </div>
-  </nav>
+{% block title %}Chat - TurfEase{% endblock %}
 
-  <!-- Flash Messages -->
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-      {% for category, message in messages %}
-      <div class="alert alert-{{ category }} mb-4 p-4 rounded-md
-        {% if category == 'error' %}bg-red-100 border border-red-400 text-red-700
-        {% elif category == 'success' %}bg-green-100 border border-green-400 text-green-700
-        {% elif category == 'info' %}bg-blue-100 border border-blue-400 text-blue-700
-        {% else %}bg-yellow-100 border border-yellow-400 text-yellow-700{% endif %}">
-        {{ message }}
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-  {% endwith %}
+{% block extra_head %}
+<style>
+    .chat-container {
+        height: 600px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 10px 10px 0 0;
+    }
+    
+    .message {
+        margin-bottom: 15px;
+        animation: fadeIn 0.3s ease-in;
+    }
+    
+    .message.own {
+        text-align: right;
+    }
+    
+    .message-bubble {
+        display: inline-block;
+        max-width: 70%;
+        padding: 12px 16px;
+        border-radius: 20px;
+        word-wrap: break-word;
+    }
+    
+    .message.own .message-bubble {
+        background: var(--primary-color);
+        color: white;
+        border-bottom-right-radius: 5px;
+    }
+    
+    .message.other .message-bubble {
+        background: white;
+        color: #333;
+        border: 1px solid #e5e7eb;
+        border-bottom-left-radius: 5px;
+    }
+    
+    .message.admin .message-bubble {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-bottom-left-radius: 5px;
+    }
+    
+    .message-info {
+        font-size: 0.75rem;
+        color: #6b7280;
+        margin-top: 5px;
+    }
+    
+    .chat-input {
+        background: white;
+        border-radius: 0 0 10px 10px;
+        border-top: 1px solid #e5e7eb;
+        padding: 20px;
+    }
+    
+    .online-users {
+        background: rgba(16, 185, 129, 0.1);
+        border-left: 4px solid #10b981;
+        padding: 10px 15px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .typing-indicator {
+        padding: 10px;
+        font-style: italic;
+        color: #6b7280;
+    }
+</style>
+{% endblock %}
 
-  <!-- Chat Container -->
-  <main class="flex-grow max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col h-[calc(100vh-4rem)]">
-    <div id="chat-window" class="flex-grow overflow-y-auto p-4 bg-white rounded-lg shadow-lg border border-gray-200 mb-4 space-y-4">
-      {% for msg in messages %}
-        <div class="flex {% if msg['is_admin'] %}justify-end{% else %}justify-start{% endif %}">
-          <div class="max-w-xs md:max-w-md bg-indigo-100 {% if msg['is_admin'] %}bg-indigo-300{% endif %} p-3 rounded-lg shadow-sm">
-            <div class="flex items-center mb-1 space-x-2">
-              <span class="font-semibold text-indigo-700">{{ msg['name'] }}</span>
-              <span class="text-xs text-gray-500">{{ msg['created_at'][:16].replace('T', ' ') }}</span>
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="mb-0">
+                            <i class="fas fa-comments text-primary me-2"></i>Sports Council Chat
+                        </h5>
+                        <small class="text-muted">Connect with admins and fellow students</small>
+                    </div>
+                    <div class="online-users">
+                        <i class="fas fa-circle text-success me-2"></i>
+                        <small>You are online as <strong>{{ current_user.name }}</strong></small>
+                    </div>
+                </div>
             </div>
-            <p class="text-gray-800 whitespace-pre-wrap">{{ msg['message'] }}</p>
-          </div>
+            
+            <div class="chat-container">
+                <!-- Chat Messages -->
+                <div class="chat-messages" id="messages">
+                    {% for message in messages %}
+                    <div class="message {{ 'own' if message.user_id == current_user.id else 'admin' if message.is_admin else 'other' }}">
+                        <div class="message-bubble">
+                            <div class="message-content">{{ message.message }}</div>
+                        </div>
+                        <div class="message-info">
+                            {% if message.user_id != current_user.id %}
+                                <strong>{{ message.name }}</strong>
+                                {% if message.is_admin %}
+                                    <i class="fas fa-crown text-warning ms-1" title="Admin"></i>
+                                {% endif %}
+                                •
+                            {% endif %}
+                            {{ message.created_at }}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <!-- Typing Indicator -->
+                <div class="typing-indicator d-none" id="typingIndicator">
+                    <i class="fas fa-ellipsis-h"></i> Someone is typing...
+                </div>
+                
+                <!-- Chat Input -->
+                <div class="chat-input">
+                    <form id="messageForm" class="d-flex">
+                        <input type="text" class="form-control me-3" id="messageInput" 
+                               placeholder="Type your message..." autocomplete="off" required>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </form>
+                    <small class="text-muted mt-2 d-block">
+                        <i class="fas fa-info-circle me-1"></i>
+                        Please be respectful and follow college guidelines in your communications.
+                    </small>
+                </div>
+            </div>
         </div>
-      {% endfor %}
+        
+        <!-- Chat Guidelines -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="fas fa-rules text-warning me-2"></i>Chat Guidelines
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="text-success">
+                            <i class="fas fa-check me-2"></i>Do's
+                        </h6>
+                        <ul class="small">
+                            <li>Ask questions about turf bookings</li>
+                            <li>Share relevant sports announcements</li>
+                            <li>Be respectful to all members</li>
+                            <li>Use appropriate language</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-danger">
+                            <i class="fas fa-times me-2"></i>Don'ts
+                        </h6>
+                        <ul class="small">
+                            <li>Share personal/sensitive information</li>
+                            <li>Use offensive or inappropriate language</li>
+                            <li>Spam or flood the chat</li>
+                            <li>Discuss non-sports related topics</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+</div>
+{% endblock %}
 
-    <!-- Message Input -->
-    <form id="chat-form" class="flex space-x-2">
-      <input type="text" id="message-input" autocomplete="off" placeholder="Type your message..."
-             class="flex-grow border border-gray-300 rounded-md px-4 py-2 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required />
-      <button type="submit"
-              class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-        <i class="fas fa-paper-plane"></i>
-      </button>
-    </form>
-  </main>
-
-  <script>
+{% block extra_scripts %}
+<!-- Socket.IO -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+<script>
     const socket = io();
-
-    const chatWindow = document.getElementById('chat-window');
-    const chatForm = document.getElementById('chat-form');
-    const messageInput = document.getElementById('message-input');
-
+    const messages = document.getElementById('messages');
+    const messageForm = document.getElementById('messageForm');
+    const messageInput = document.getElementById('messageInput');
+    const typingIndicator = document.getElementById('typingIndicator');
+    
+    let typingTimer;
+    let isTyping = false;
+    
     // Join chat room
     socket.emit('join', {});
-
-    // Listen for status messages (user joined/left)
-    socket.on('status', data => {
-      const statusDiv = document.createElement('div');
-      statusDiv.classList.add('text-center', 'text-gray-500', 'text-sm', 'italic', 'my-2');
-      statusDiv.textContent = data.msg;
-      chatWindow.appendChild(statusDiv);
-      chatWindow.scrollTop = chatWindow.scrollHeight;
+    
+    // Handle form submission
+    messageForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const message = messageInput.value.trim();
+        if (message) {
+            socket.emit('message', { message: message });
+            messageInput.value = '';
+            
+            // Stop typing indicator
+            if (isTyping) {
+                socket.emit('stop_typing');
+                isTyping = false;
+            }
+        }
     });
-
-    // Listen for chat messages
-    socket.on('message', data => {
-      const messageDiv = document.createElement('div');
-      messageDiv.classList.add('flex');
-      if(data.is_admin) {
-        messageDiv.classList.add('justify-end');
-      } else {
-        messageDiv.classList.add('justify-start');
-      }
-
-      const bubble = document.createElement('div');
-      bubble.className = `max-w-xs md:max-w-md p-3 rounded-lg shadow-sm ${
-        data.is_admin ? 'bg-indigo-300' : 'bg-indigo-100'
-      }`;
-
-      const header = document.createElement('div');
-      header.className = 'flex items-center mb-1 space-x-2';
-
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'font-semibold text-indigo-700';
-      nameSpan.textContent = data.name;
-
-      const timeSpan = document.createElement('span');
-      timeSpan.className = 'text-xs text-gray-500';
-      timeSpan.textContent = data.timestamp.slice(0,16).replace('T', ' ');
-
-      header.appendChild(nameSpan);
-      header.appendChild(timeSpan);
-
-      const messageText = document.createElement('p');
-      messageText.className = 'text-gray-800 whitespace-pre-wrap';
-      messageText.textContent = data.message;
-
-      bubble.appendChild(header);
-      bubble.appendChild(messageText);
-
-      messageDiv.appendChild(bubble);
-      chatWindow.appendChild(messageDiv);
-
-      chatWindow.scrollTop = chatWindow.scrollHeight;
+    
+    // Handle typing indicator
+    messageInput.addEventListener('input', function() {
+        if (!isTyping) {
+            socket.emit('typing');
+            isTyping = true;
+        }
+        
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(function() {
+            socket.emit('stop_typing');
+            isTyping = false;
+        }, 1000);
     });
-
-    // Send message on form submit
-    chatForm.addEventListener('submit', e => {
-      e.preventDefault();
-      const message = messageInput.value.trim();
-      if(message.length > 0){
-        socket.emit('message', { message: message });
-        messageInput.value = '';
-      }
+    
+    // Receive messages
+    socket.on('message', function(data) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${data.name === '{{ current_user.name }}' ? 'own' : data.is_admin ? 'admin' : 'other'}`;
+        
+        messageDiv.innerHTML = `
+            <div class="message-bubble">
+                <div class="message-content">${escapeHtml(data.message)}</div>
+            </div>
+            <div class="message-info">
+                ${data.name !== '{{ current_user.name }}' ? `<strong>${data.name}</strong> ${data.is_admin ? '<i class="fas fa-crown text-warning ms-1" title="Admin"></i>' : ''} •` : ''}
+                ${data.timestamp}
+            </div>
+        `;
+        
+        messages.appendChild(messageDiv);
+        messages.scrollTop = messages.scrollHeight;
     });
-
-    // Leave chat room on unload (optional)
-    window.addEventListener('beforeunload', () => {
-      socket.emit('leave', {});
+    
+    // Handle status messages
+    socket.on('status', function(data) {
+        const statusDiv = document.createElement('div');
+        statusDiv.className = 'text-center text-muted small my-2';
+        statusDiv.innerHTML = `<em>${data.msg}</em>`;
+        messages.appendChild(statusDiv);
+        messages.scrollTop = messages.scrollHeight;
     });
-  </script>
-</body>
-</html>
+    
+    // Handle typing indicators
+    socket.on('typing', function(data) {
+        if (data.name !== '{{ current_user.name }}') {
+            typingIndicator.textContent = `${data.name} is typing...`;
+            typingIndicator.classList.remove('d-none');
+        }
+    });
+    
+    socket.on('stop_typing', function() {
+        typingIndicator.classList.add('d-none');
+    });
+    
+    // Utility function to escape HTML
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+    }
+    
+    // Auto-scroll to bottom on page load
+    window.addEventListener('load', function() {
+        messages.scrollTop = messages.scrollHeight;
+    });
+    
+    // Handle disconnect
+    window.addEventListener('beforeunload', function() {
+        socket.emit('leave', {});
+    });
+</script>
+{% endblock %}

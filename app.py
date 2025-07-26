@@ -83,6 +83,29 @@ def init_db():
         )
     ''')
     
+    # Turf availability table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS turf_availability (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            turf_side TEXT NOT NULL,
+            day_of_week TEXT NOT NULL,  -- e.g., 'Monday'
+            start_time TEXT NOT NULL,   -- e.g., '04:00'
+            end_time TEXT NOT NULL      -- e.g., '22:00'
+        )
+    ''')
+    
+    # Events table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            event_link TEXT,
+            deadline DATE NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     # Create default admin user
     admin_email = 'admin@ves.ac.in'
     admin_name = 'Sports Council Admin'
@@ -161,26 +184,39 @@ TURF_SIDES = ['Football', 'Cricket']
 @app.route('/')
 @login_required
 def index():
+    if current_user.is_admin:
+        return redirect(url_for('admin_dashboard'))
     conn = get_db_connection()
-
-    # Get all bookings for display
-    all_bookings = conn.execute('''
+    user_bookings = conn.execute('''
         SELECT b.*, u.name, u.email, u.division
         FROM bookings b
         JOIN users u ON b.user_id = u.id
-        WHERE b.status = 'approved'
-        ORDER BY b.booking_date ASC, time_slot ASC
+        WHERE b.user_id = ?
+        ORDER BY b.booking_date DESC, time_slot ASC
+    ''', (current_user.id,)).fetchall()
+    notices = conn.execute('''
+        SELECT * FROM notices
+        ORDER BY created_at DESC
+        LIMIT 5
     ''').fetchall()
-
+    today = datetime.today().date()
+    start_of_week = today - timedelta(days=today.weekday())
+    end_of_week = start_of_week + timedelta(days=6)
+    weekly_bookings = conn.execute('''
+        SELECT b.*, u.name, u.email, u.division
+        FROM bookings b
+        JOIN users u ON b.user_id = u.id
+        WHERE booking_date BETWEEN ? AND ?
+        ORDER BY booking_date, time_slot
+    ''', (start_of_week, end_of_week)).fetchall()
     conn.close()
-
     return render_template('dashboard.html',
-                           bookings=all_bookings,
-                           is_admin=current_user.is_admin,
-                           user=current_user)
+                           bookings=user_bookings,
+                           is_admin=False,
+                           user=current_user,
+                           notices=notices,
+                           weekly_bookings=weekly_bookings)
 
-
-from werkzeug.security import generate_password_hash, check_password_hash
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -272,9 +308,26 @@ def logout():
 
 from datetime import datetime, timedelta
 
+def cleanup_notices_and_events():
+    conn = get_db_connection()
+    # Delete notices older than 3 days
+    three_days_ago = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d %H:%M:%S')
+    conn.execute("DELETE FROM notices WHERE created_at < ?", (three_days_ago,))
+    # Delete events past their deadline
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn.execute("DELETE FROM events WHERE deadline < ?", (today,))
+    conn.commit()
+    conn.close()
+
+# Call this at the start of each dashboard route
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    cleanup_notices_and_events()
+    # Redirect admins to the admin dashboard
+    if current_user.is_admin:
+        return redirect(url_for('admin_dashboard'))
+
     today = datetime.today().date()
     start_of_week = today - timedelta(days=today.weekday())  # Monday
     end_of_week = start_of_week + timedelta(days=6)          # Sunday
@@ -295,6 +348,13 @@ def dashboard():
         LIMIT 5
     ''').fetchall()
 
+    # Events (only those with deadline >= today)
+    events = conn.execute('''
+        SELECT * FROM events
+        WHERE deadline >= ?
+        ORDER BY deadline ASC
+    ''', (today.strftime('%Y-%m-%d'),)).fetchall()
+
     # Weekly bookings (all users, between start_of_week and end_of_week)
     weekly_bookings = conn.execute('''
         SELECT b.*, u.name, u.email, u.division
@@ -310,6 +370,7 @@ def dashboard():
         user=current_user,
         bookings=user_bookings,
         notices=notices,
+        events=events,  # <-- Pass events to template
         weekly_bookings=weekly_bookings
     )
 
@@ -323,57 +384,61 @@ def book_turf():
         booking_date = request.form.get('booking_date')
         time_slot = request.form.get('time_slot')
         
-        # Validate booking date (max 7 days ahead)
         try:
+            conn = get_db_connection()
+
+            # Only restrict normal users to one booking per day
+            if not current_user.is_admin:
+                existing_booking = conn.execute('''
+                    SELECT * FROM bookings 
+                    WHERE user_id = ? AND booking_date = ? AND status != 'declined'
+                ''', (current_user.id, booking_date)).fetchone()
+                
+                if existing_booking:
+                    flash('You already have a booking for this date.', 'error')
+                    conn.close()
+                    return redirect(url_for('book_turf'))
+            # Admins can book multiple slots per day
+
+            # Check if slot is available (for all users)
+            slot_taken = conn.execute('''
+                SELECT * FROM bookings 
+                WHERE turf_side = ? AND booking_date = ? AND time_slot = ? AND status = 'approved'
+            ''', (turf_side, booking_date, time_slot)).fetchone()
+            
+            if slot_taken:
+                flash('This slot is already booked.', 'error')
+                conn.close()
+                return redirect(url_for('book_turf'))
+            
+            # Check if slot is within allowed availability
             booking_date_obj = datetime.strptime(booking_date, '%Y-%m-%d').date()
-            today = datetime.now().date()
-            max_date = today + timedelta(days=7)
-            
-            if booking_date_obj < today:
-                flash('Cannot book for past dates.', 'error')
+            day_of_week = booking_date_obj.strftime('%A')
+            slot_start = time_slot.split('-')[0]
+            slot_end = time_slot.split('-')[1]
+            availability = conn.execute('''
+                SELECT * FROM turf_availability
+                WHERE turf_side = ? AND day_of_week = ?
+                  AND start_time <= ? AND end_time >= ?
+            ''', (turf_side, day_of_week, slot_start, slot_end)).fetchone()
+            if not availability:
+                flash('This slot is not available for booking as per turf timings.', 'error')
+                conn.close()
                 return redirect(url_for('book_turf'))
             
-            if booking_date_obj > max_date:
-                flash('Cannot book more than 7 days in advance.', 'error')
-                return redirect(url_for('book_turf'))
-        except ValueError:
-            flash('Invalid date format.', 'error')
-            return redirect(url_for('book_turf'))
-        
-        conn = get_db_connection()
-        
-        # Check if user already has a booking for this date
-        existing_booking = conn.execute('''
-            SELECT * FROM bookings 
-            WHERE user_id = ? AND booking_date = ? AND status != 'declined'
-        ''', (current_user.id, booking_date)).fetchone()
-        
-        if existing_booking:
-            flash('You already have a booking for this date.', 'error')
+            # Create booking
+            conn.execute('''
+                INSERT INTO bookings (user_id, turf_side, booking_date, time_slot)
+                VALUES (?, ?, ?, ?)
+            ''', (current_user.id, turf_side, booking_date, time_slot))
+            conn.commit()
             conn.close()
+            
+            flash('Booking request submitted successfully!', 'success')
+            return redirect(url_for('dashboard'))
+        except Exception as e:
+            flash('An error occurred while booking. Please try again.', 'error')
             return redirect(url_for('book_turf'))
-        
-        # Check if slot is available
-        slot_taken = conn.execute('''
-            SELECT * FROM bookings 
-            WHERE turf_side = ? AND booking_date = ? AND time_slot = ? AND status = 'approved'
-        ''', (turf_side, booking_date, time_slot)).fetchone()
-        
-        if slot_taken:
-            flash('This slot is already booked.', 'error')
-            conn.close()
-            return redirect(url_for('book_turf'))
-        
-        # Create booking
-        conn.execute('''
-            INSERT INTO bookings (user_id, turf_side, booking_date, time_slot)
-            VALUES (?, ?, ?, ?)
-        ''', (current_user.id, turf_side, booking_date, time_slot))
-        conn.commit()
-        conn.close()
-        
-        flash('Booking request submitted successfully!', 'success')
-        return redirect(url_for('dashboard'))
     
     return render_template("booking.html", 
                                 time_slots=TIME_SLOTS, 
@@ -386,17 +451,40 @@ def book_turf():
 def check_availability():
     turf_side = request.args.get('turf_side')
     booking_date = request.args.get('booking_date')
-    
+
+    # Get day of week
+    import datetime
+    day_of_week = datetime.datetime.strptime(booking_date, '%Y-%m-%d').strftime('%A')
+
     conn = get_db_connection()
+    # Get allowed time ranges for this turf and day
+    allowed_ranges = conn.execute('''
+        SELECT start_time, end_time FROM turf_availability
+        WHERE turf_side = ? AND day_of_week = ?
+    ''', (turf_side, day_of_week)).fetchall()
+
+    # Get already booked slots
     booked_slots = conn.execute('''
         SELECT time_slot FROM bookings 
         WHERE turf_side = ? AND booking_date = ? AND status = 'approved'
     ''', (turf_side, booking_date)).fetchall()
     conn.close()
-    
+
     booked_times = [slot['time_slot'] for slot in booked_slots]
-    available_slots = [slot for slot in TIME_SLOTS if slot not in booked_times]
-    
+
+    # Filter TIME_SLOTS: must be within allowed_ranges and not booked
+    def is_within_ranges(slot):
+        slot_start, slot_end = slot.split('-')
+        for rng in allowed_ranges:
+            if rng['start_time'] <= slot_start and rng['end_time'] >= slot_end:
+                return True
+        return False
+
+    available_slots = [
+        slot for slot in TIME_SLOTS
+        if is_within_ranges(slot) and slot not in booked_times
+    ]
+
     return jsonify(available_slots)
 
 @app.route('/profile', methods=['GET', 'POST'])
@@ -432,29 +520,89 @@ def profile():
 @app.route('/admin/dashboard')
 @admin_required
 def admin_dashboard():
+    cleanup_notices_and_events()
+    # Handle direct week selection by date
+    week_start_str = request.args.get('week_start')
+    if week_start_str:
+        start_of_week = datetime.strptime(week_start_str, '%Y-%m-%d').date()
+        start_of_week = start_of_week - timedelta(days=start_of_week.weekday())
+        week_offset = ((start_of_week - datetime.today().date()).days) // 7
+    else:
+        week_offset = int(request.args.get('week', 0))
+        today = datetime.today().date()
+        start_of_week = today - timedelta(days=today.weekday()) + timedelta(weeks=week_offset)
+    end_of_week = start_of_week + timedelta(days=6)
+
     conn = get_db_connection()
-    
-    # Get all pending bookings
+
+    # Get all bookings for the selected week with user info
+    week_bookings = conn.execute('''
+        SELECT b.*, u.name, u.email, u.division
+        FROM bookings b
+        JOIN users u ON b.user_id = u.id
+        WHERE b.booking_date BETWEEN ? AND ?
+        ORDER BY b.booking_date, b.time_slot
+    ''', (start_of_week, end_of_week)).fetchall()
+
+    # Notices (latest 5)
+    notices = conn.execute('''
+        SELECT * FROM notices
+        ORDER BY created_at DESC
+        LIMIT 5
+    ''').fetchall()
+
+    # Statistics for dashboard cards
+    total_bookings = conn.execute('SELECT COUNT(*) FROM bookings').fetchone()[0]
+    approved_bookings = conn.execute("SELECT COUNT(*) FROM bookings WHERE status = 'approved'").fetchone()[0]
+    pending_count = conn.execute("SELECT COUNT(*) FROM bookings WHERE status = 'pending'").fetchone()[0]
     pending_bookings = conn.execute('''
-        SELECT b.*, u.name, u.email, u.division 
+        SELECT b.*, u.name, u.email, u.division
         FROM bookings b
         JOIN users u ON b.user_id = u.id
         WHERE b.status = 'pending'
-        ORDER BY b.booking_date ASC, b.created_at ASC
+        ORDER BY b.booking_date, b.time_slot
     ''').fetchall()
-    
-    # Get statistics
-    total_bookings = conn.execute('SELECT COUNT(*) as count FROM bookings').fetchone()['count']
-    approved_bookings = conn.execute('SELECT COUNT(*) as count FROM bookings WHERE status = "approved"').fetchone()['count']
-    pending_count = conn.execute('SELECT COUNT(*) as count FROM bookings WHERE status = "pending"').fetchone()['count']
-    
+
+    # --- Fetch admin's own bookings for "Your Recent Bookings" ---
+    my_bookings = conn.execute('''
+        SELECT b.*, u.name, u.email, u.division
+        FROM bookings b
+        JOIN users u ON b.user_id = u.id
+        WHERE b.user_id = ?
+        ORDER BY b.booking_date DESC, time_slot ASC
+    ''', (current_user.id,)).fetchall()
+
     conn.close()
-    
-    return render_template("admin_dashboard.html",
-                                pending_bookings=pending_bookings,
-                                total_bookings=total_bookings,
-                                approved_bookings=approved_bookings,
-                                pending_count=pending_count)
+
+    # Prepare bookings in a dict: {date: {turf_side: [bookings...]}}
+    calendar = {}
+    for i in range(7):
+        day = (start_of_week + timedelta(days=i)).strftime('%Y-%m-%d')
+        calendar[day] = {turf: [] for turf in TURF_SIDES}
+
+    for booking in week_bookings:
+        day = booking['booking_date']
+        turf = booking['turf_side']
+        calendar[day][turf].append(booking)
+
+    return render_template(
+        "admin_dashboard.html",
+        calendar=calendar,
+        start_of_week=start_of_week,
+        end_of_week=end_of_week,
+        week_offset=week_offset,
+        TURF_SIDES=TURF_SIDES,
+        notices=notices,
+        total_bookings=total_bookings,
+        approved_bookings=approved_bookings,
+        pending_count=pending_count,
+        pending_bookings=pending_bookings,
+        bookings=my_bookings,  # <-- Pass admin's own bookings here
+        is_admin=True,
+        user=current_user,
+        weekly_bookings=week_bookings
+    )
+
 
 @app.route('/admin/booking/<int:booking_id>/<action>')
 @admin_required
@@ -508,17 +656,19 @@ def admin_pending_approvals():
 
     return render_template('admin_pending_approvals.html', pending_admins=pending_admins)
 
-
-
-
-
 @app.route('/admin/notices', methods=['GET', 'POST'])
 @admin_required
 def admin_notices():
     if request.method == 'POST':
         title = request.form.get('title')
         content = request.form.get('content')
-        
+        event_link = request.form.get('event_link')  # New: optional event/form/instagram link
+
+        # Combine content and link for display (or store as separate columns if you wish)
+        if event_link:
+            # You can style this in your template as needed
+            content = f"{content}<br><a href='{event_link}' target='_blank'>{event_link}</a>"
+
         conn = get_db_connection()
         conn.execute('''
             INSERT INTO notices (title, content)
@@ -527,7 +677,7 @@ def admin_notices():
         conn.commit()
         conn.close()
         
-        flash('Notice posted successfully!', 'success')
+        flash('Notice/event posted successfully!', 'success')
         return redirect(url_for('admin_notices'))
     
     conn = get_db_connection()
@@ -537,7 +687,32 @@ def admin_notices():
     ''').fetchall()
     conn.close()
     
-    return render_template("admin_notices.html", notices=notices)
+    from datetime import datetime
+
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    notices_today = [n for n in notices if n['created_at'].startswith(today_str)]
+    notices_today_count = len(notices_today)
+
+    return render_template("admin_notices.html", notices=notices, notices_today_count=notices_today_count)
+
+@app.route('/admin/turf_availability', methods=['GET', 'POST'])
+@admin_required
+def turf_availability():
+    conn = get_db_connection()
+    if request.method == 'POST':
+        turf_side = request.form.get('turf_side')
+        day_of_week = request.form.get('day_of_week')
+        start_time = request.form.get('start_time')
+        end_time = request.form.get('end_time')
+        conn.execute('''
+            INSERT INTO turf_availability (turf_side, day_of_week, start_time, end_time)
+            VALUES (?, ?, ?, ?)
+        ''', (turf_side, day_of_week, start_time, end_time))
+        conn.commit()
+        flash('Turf availability updated.', 'success')
+    availabilities = conn.execute('SELECT * FROM turf_availability').fetchall()
+    conn.close()
+    return render_template('admin_turf_availability.html', availabilities=availabilities, turf_sides=TURF_SIDES)
 
 @app.route('/chat')
 @login_required
@@ -644,8 +819,63 @@ self.addEventListener('fetch', function(event) {
 });
 ''', 200, {'Content-Type': 'application/javascript'}
 
+@app.route('/cancel_booking/<int:booking_id>', methods=['POST'])
+@login_required
+def cancel_booking(booking_id):
+    conn = get_db_connection()
+    # Only allow user to cancel their own booking and only if not already declined/cancelled
+    booking = conn.execute(
+        'SELECT * FROM bookings WHERE id = ? AND user_id = ?', (booking_id, current_user.id)
+    ).fetchone()
+    if not booking:
+        conn.close()
+        flash('Booking not found or not authorized.', 'error')
+        return redirect(url_for('dashboard'))
+
+    if booking['status'] in ['declined', 'cancelled']:
+        conn.close()
+        flash('Booking already declined or cancelled.', 'info')
+        return redirect(url_for('dashboard'))
+
+    conn.execute(
+        'UPDATE bookings SET status = ? WHERE id = ?', ('cancelled', booking_id)
+    )
+    conn.commit()
+    conn.close()
+    flash('Booking cancelled successfully.', 'success')
+    return redirect(url_for('dashboard'))
+
+@app.route('/admin/availability/<int:availability_id>/delete', methods=['DELETE'])
+@admin_required
+def delete_availability(availability_id):
+    conn = get_db_connection()
+    conn.execute('DELETE FROM turf_availability WHERE id = ?', (availability_id,))
+    conn.commit()
+    conn.close()
+    return '', 204  # No Content, signals success for fetch API
+
+@app.template_filter('datetimeformat')
+def datetimeformat(value, format='%A, %d %b'):
+    return datetime.strptime(value, '%Y-%m-%d').strftime(format)
+
+@app.route('/admin/add_event', methods=['POST'])
+@admin_required
+def admin_add_event():
+    title = request.form['title']
+    content = request.form['content']
+    event_link = request.form.get('event_link')
+    deadline = request.form['deadline']
+    conn = get_db_connection()
+    conn.execute('''
+        INSERT INTO events (title, content, event_link, deadline)
+        VALUES (?, ?, ?, ?)
+    ''', (title, content, event_link, deadline))
+    conn.commit()
+    conn.close()
+    flash('Event added!', 'success')
+    return redirect(url_for('admin_dashboard'))
+
 if __name__ == '__main__':
     init_db()
     socketio.run(app, debug=True)
 
-     

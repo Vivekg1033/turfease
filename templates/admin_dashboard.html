@@ -1,213 +1,250 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Admin Dashboard - TurfEase</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-</head>
+{% block title %}Admin Dashboard - TurfEase{% endblock %}
 
-<body class="bg-gray-50 min-h-screen flex flex-col">
+{% block content %}
 
-    <!-- Navigation -->
-    <nav class="bg-white shadow-lg sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0">
-                        <h1 class="text-2xl font-bold text-indigo-600">TurfEase Admin</h1>
-                    </div>
-                    <div class="hidden md:ml-6 md:flex md:space-x-8">
-                        <a href="{{ url_for('admin_dashboard') }}"
-                            class="border-indigo-500 text-gray-900 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
-                        </a>
-                        <a href="{{ url_for('admin_notices') }}"
-                            class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-bullhorn mr-2"></i>Notices
-                        </a>
-                        <a href="{{ url_for('chat') }}"
-                            class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">
-                            <i class="fas fa-comments mr-2"></i>Chat
-                        </a>
-                    </div>
-                </div>
-                <div class="flex items-center">
-                    <div class="flex-shrink-0">
-                        <span class="text-gray-700 text-sm">{{ current_user.name }}</span>
-                        <a href="{{ url_for('logout') }}"
-                            class="ml-4 bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md text-sm font-medium">
-                            <i class="fas fa-sign-out-alt mr-1"></i>Logout
-                        </a>
-                    </div>
-                </div>
+<!-- User Dashboard Sections (for admins) -->
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <!-- Recent Bookings -->
+        <div class="card mb-3">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-history me-2"></i>Your Recent Bookings</h5>
             </div>
-        </div>
-    </nav>
-
-    <!-- Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
-        {% for category, message in messages %}
-        <div class="alert alert-{{ category }} mb-4 p-4 rounded-md
-        {% if category == 'error' %}bg-red-100 border border-red-400 text-red-700
-        {% elif category == 'success' %}bg-green-100 border border-green-400 text-green-700
-        {% elif category == 'info' %}bg-blue-100 border border-blue-400 text-blue-700
-        {% else %}bg-yellow-100 border border-yellow-400 text-yellow-700{% endif %}">
-            {{ message }}
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-    {% endwith %}
-
-    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-
-        <!-- Stats -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-                <h2 class="text-gray-500 text-sm font-semibold mb-2 uppercase">Total Bookings</h2>
-                <p class="text-3xl font-bold text-indigo-600">{{ total_bookings }}</p>
-            </div>
-            <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-                <h2 class="text-gray-500 text-sm font-semibold mb-2 uppercase">Approved Bookings</h2>
-                <p class="text-3xl font-bold text-green-600">{{ approved_bookings }}</p>
-            </div>
-            <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-                <h2 class="text-gray-500 text-sm font-semibold mb-2 uppercase">Pending Requests</h2>
-                <p class="text-3xl font-bold text-yellow-600">{{ pending_count }}</p>
-            </div>
-        </div>
-
-        <!-- Weekly Bookings Section -->
-        <div class="mt-10 bg-white p-6 rounded-lg shadow-lg">
-            <h2 class="text-2xl font-semibold mb-4 text-indigo-700">All Bookings This Week</h2>
-
-            <div class="overflow-x-auto">
-                {% if weekly_bookings %}
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Turf</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Booked At</th>
-                            {% if current_user.is_admin %}
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                            {% endif %}
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        {% for booking in weekly_bookings %}
-                        <tr
-                            class="{% if booking.status == 'approved' %}bg-green-50{% elif booking.status == 'pending' %}bg-yellow-50{% else %}bg-red-50{% endif %}">
-                            <td class="px-6 py-4 text-sm text-gray-700">{{ booking.user.name }}</td>
-                            <td class="px-6 py-4 text-sm text-gray-700">{{ booking.turf_side }}</td>
-                            <td class="px-6 py-4 text-sm text-gray-700">{{ booking.booking_date }}</td>
-                            <td class="px-6 py-4 text-sm text-gray-700">{{ booking.time_slot }}</td>
-                            <td class="px-6 py-4 text-sm">
-                                <span class="px-2 py-1 text-xs rounded-full font-medium 
-                            {% if booking.status == 'approved' %}bg-green-100 text-green-800
-                            {% elif booking.status == 'pending' %}bg-yellow-100 text-yellow-800
-                            {% else %}bg-red-100 text-red-800{% endif %}">
-                                    {{ booking.status | capitalize }}
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 text-sm text-gray-600">
-                                {{ booking.reason or '-' }}
-                            </td>
-                            <td class="px-6 py-4 text-sm text-gray-500">{{ booking.created_at }}</td>
-                            {% if current_user.is_admin %}
-                            <td class="px-6 py-4 text-sm">
-                                <form method="POST" action="{{ url_for('cancel_booking', booking_id=booking.id) }}">
-                                    <button class="text-red-600 hover:underline text-sm" type="submit">
-                                        Cancel
-                                    </button>
-                                </form>
-                            </td>
-                            {% endif %}
-                        </tr>
+            <div class="card-body">
+                {% if bookings %}
+                    <ul class="list-group">
+                        {% for booking in bookings[:5] %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <strong>{{ booking.turf_side }}</strong> on <strong>{{ booking.booking_date }}</strong>
+                                at <strong>{{ booking.time_slot }}</strong>
+                                <span class="badge bg-light text-dark ms-2">{{ booking.status }}</span>
+                            </span>
+                        </li>
                         {% endfor %}
-                    </tbody>
-                    {% if current_user.is_admin %}
-                    <form method="POST" action="{{ url_for('cancel_booking', booking_id=booking.id) }}">
-                        <button type="submit" class="ml-2 text-red-600 hover:underline text-sm">
-                            Cancel
-                        </button>
-                    </form>
-                    {% endif %}
-
-                </table>
+                    </ul>
                 {% else %}
-                <p class="text-center text-gray-600">No bookings found for this week.</p>
+                    <div class="alert alert-info mb-0">No recent bookings.</div>
+                {% endif %}
+            </div>
+        </div>
+        <!-- Book Now Button -->
+        <div class="d-grid mb-3">
+            <a href="{{ url_for('book_turf') }}" class="btn btn-success btn-lg">
+                <i class="fas fa-calendar-plus me-2"></i>Book Now
+            </a>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <!-- Notices -->
+        <div class="card mb-3">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0"><i class="fas fa-bullhorn me-2"></i>Notices</h5>
+            </div>
+            <div class="card-body">
+                {% if notices %}
+                    <ul class="list-group">
+                        {% for notice in notices %}
+                        <li class="list-group-item">
+                            <strong>{{ notice.title }}</strong>
+                            <br>
+                            <span class="text-muted small">{{ notice.created_at }}</span>
+                            <div>{{ notice.content }}</div>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="alert alert-info mb-0">No notices yet.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Admin Dashboard Features -->
+<div class="row">
+    <div class="col-12">
+        <!-- Dashboard Stats -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h6 class="text-muted">Total Bookings</h6>
+                        <h3>{{ total_bookings }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h6 class="text-muted">Approved Bookings</h6>
+                        <h3>{{ approved_bookings }}</h3>
+                        <div class="text-success">
+                            {{ ((approved_bookings / total_bookings * 100) | round(1)) if total_bookings > 0 else 0 }}%
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center">
+                    <div class="card-body">
+                        <h6 class="text-muted">Pending Bookings</h6>
+                        <h3>{{ pending_count }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending Approvals -->
+        <div class="card mb-4">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="fas fa-hourglass-half me-2"></i>Pending Booking Approvals</h5>
+            </div>
+            <div class="card-body">
+                {% if pending_bookings %}
+                    <ul class="list-group">
+                        {% for booking in pending_bookings %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>
+                                <strong>{{ booking.name }}</strong> ({{ booking.division }})<br>
+                                <strong>{{ booking.turf_side }}</strong> on <strong>{{ booking.booking_date }}</strong>
+                                at <strong>{{ booking.time_slot }}</strong>
+                            </span>
+                            <span>
+                                <a href="{{ url_for('admin_booking_action', booking_id=booking.id, action='approve') }}" class="btn btn-success btn-sm">Approve</a>
+                                <a href="{{ url_for('admin_booking_action', booking_id=booking.id, action='decline') }}" class="btn btn-danger btn-sm">Decline</a>
+                            </span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                {% else %}
+                    <div class="alert alert-info mb-0">No pending bookings.</div>
                 {% endif %}
             </div>
         </div>
 
-
-        <!-- Pending Bookings Table -->
-        <section>
-            <h2 class="text-xl font-semibold text-gray-900 mb-4">Pending Booking Requests</h2>
-            {% if pending_bookings %}
-            <div class="overflow-x-auto bg-white rounded-lg shadow-md border border-gray-200">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
+        <!-- Weekly Calendar -->
+        <div class="card mt-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-calendar-week me-2"></i>This Week's Schedule</h5>
+            </div>
+            <div class="card-body table-responsive">
+                <!-- Week Navigation Controls -->
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <a class="btn btn-outline-primary" href="{{ url_for('admin_dashboard', week=week_offset-1) }}">
+                        &laquo; Previous Week
+                    </a>
+                    <form method="get" class="d-inline-block">
+                        <label for="week_start" class="me-2 fw-bold">Go to week starting:</label>
+                        <input type="date" id="week_start" name="week_start"
+                               value="{{ start_of_week }}"
+                               min="2020-01-01" max="2100-12-31"
+                               class="form-control d-inline-block" style="width: 180px;">
+                        <button type="submit" class="btn btn-primary ms-2">Go</button>
+                    </form>
+                    <a class="btn btn-outline-primary" href="{{ url_for('admin_dashboard', week=week_offset+1) }}">
+                        Next Week &raquo;
+                    </a>
+                </div>
+                <table class="table table-bordered align-middle text-center">
+                    <thead>
                         <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                User</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Email</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Division</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Turf</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Date</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Time Slot</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Actions</th>
+                            <th>Date</th>
+                            {% for turf in TURF_SIDES %}
+                                <th>{{ turf }}</th>
+                            {% endfor %}
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-200">
-                        {% for booking in pending_bookings %}
+                    <tbody>
+                        {% for day, turfs in calendar.items() %}
                         <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking['name'] }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ booking['email'] }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ booking['division'] }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking['turf_side'] }}
+                            <td>
+                                <strong>{{ day }}</strong>
+                                <br>
+                                <span class="text-muted">{{ day | datetimeformat('A, d M') }}</span>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking['booking_date'] }}
+                            {% for turf in TURF_SIDES %}
+                            <td>
+                                {% if turfs[turf] %}
+                                    {% for booking in turfs[turf] %}
+                                        <div class="border rounded p-2 mb-2 {% if booking.status == 'approved' %}bg-success text-white{% elif booking.status == 'pending' %}bg-warning text-dark{% else %}bg-light text-muted{% endif %}">
+                                            <strong>{{ booking.time_slot }}</strong><br>
+                                            <span class="small">{{ booking.name }}</span>
+                                            <span class="badge bg-light text-dark ms-1">{{ booking.status }}</span>
+                                        </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="text-muted">No bookings</span>
+                                {% endif %}
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ booking['time_slot'] }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 space-x-2">
-                                <a href="{{ url_for('admin_booking_action', booking_id=booking['id'], action='approve') }}"
-                                    class="inline-block px-3 py-1 rounded-md bg-green-600 hover:bg-green-700 text-white text-sm">
-                                    <i class="fas fa-check mr-1"></i>Approve
-                                </a>
-                                <a href="{{ url_for('admin_booking_action', booking_id=booking['id'], action='decline') }}"
-                                    class="inline-block px-3 py-1 rounded-md bg-red-600 hover:bg-red-700 text-white text-sm">
-                                    <i class="fas fa-times mr-1"></i>Decline
-                                </a>
-                            </td>
+                            {% endfor %}
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            {% else %}
-            <p class="text-gray-500">No pending booking requests at the moment.</p>
-            {% endif %}
-        </section>
-    </main>
+        </div>
+    </div>
+</div>
 
-</body>
+{% endblock %}
 
-</html>
+{% block extra_scripts %}
+<script>
+let currentBookingId = null;
+
+function approveBooking(bookingId) {
+    if (confirm('Are you sure you want to approve this booking?')) {
+        window.location.href = `/admin/booking/${bookingId}/approve`;
+    }
+}
+
+function declineBooking(bookingId) {
+    currentBookingId = bookingId;
+    const modal = new bootstrap.Modal(document.getElementById('declineModal'));
+    modal.show();
+}
+
+function confirmDecline() {
+    const reason = document.getElementById('declineReason').value.trim();
+    if (!reason) {
+        alert('Please provide a reason for declining the booking.');
+        return;
+    }
+    
+    const url = `/admin/booking/${currentBookingId}/decline?reason=${encodeURIComponent(reason)}`;
+    window.location.href = url;
+}
+
+// Show toast notification if there's a success message
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success')) {
+        const toast = new bootstrap.Toast(document.getElementById('successToast'));
+        document.getElementById('toastMessage').textContent = 'Booking action completed successfully!';
+        toast.show();
+    }
+    
+    // Auto-refresh every 30 seconds for new bookings
+    setInterval(function() {
+        // Only refresh if there are no modals open
+        if (!document.querySelector('.modal.show')) {
+            window.location.reload();
+        }
+    }, 30000);
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // Escape key to close modals
+    if (e.key === 'Escape') {
+        const modals = document.querySelectorAll('.modal.show');
+        modals.forEach(modal => {
+            bootstrap.Modal.getInstance(modal).hide();
+        });
+    }
+});
+</script>
+{% endblock %}
